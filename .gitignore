@@ -1,0 +1,43 @@
+# CMake/build output
+build/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+CTestTestfile.cmake
+cmake_install.cmake
+install_manifest.txt
+Makefile
+compile_commands.json
+
+# Native binaries / objects
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Model artifacts — keep large binaries out of source control by default
+models/*.gguf
+models/*.bin
+models/*.safetensors
+models/*.pt
+models/*.pth
+
+# Logs / reports
+*.log
+*.prof
+coverage/
+
+# OS-generated files
+Thumbs.db
