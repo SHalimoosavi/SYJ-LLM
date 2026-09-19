@@ -1,160 +1,96 @@
-# SYJ-LLM — Phase 0 Notes
+# SYJ-LLM Phase 1 — Core Inference Runtime
 
-## Phase
+## Pinned llama.cpp revision
 
-**Phase 0 — Bootstrap & Repository Structure**
+**v0.4.1 / commit `391fac16460f15233a7740550d858ac96df3419d`** (14 Sep 2026).
 
-## Objective
+This is the stable v0.4.1 release, not a moving nightly. The official release metadata identifies target commit `391fac16460f15233a7740550d858ac96df3419d` and notes API/core fixes including the new load-mode API and updates to ggml 0.24.0. SYJ uses `LLAMA_LOAD_MODE_MMAP`, which is the current mmap-first load path at this revision.
 
-Establish a clean, portable, independently buildable C++ foundation for SYJ without introducing the llama.cpp dependency yet.
+## Packaging note
 
-## License decision
+The current build environment used to prepare this artifact cannot retrieve the ~36 MB upstream llama.cpp source archive. Therefore this bundle contains the complete SYJ integration layer plus a deterministic vendor script, but **is not falsely represented as self-contained** until `third_party/llama.cpp` is populated at `b29c606`.
 
-**Apache License 2.0** is selected for the project. It provides a permissive open-source license plus an explicit patent license, which is useful for a systems/ML runtime intended for reuse across commercial and non-commercial applications.
+Run `tools/vendor_llama.sh` once before configuring. Inference itself performs no network access.
 
-## Files added
+## Low-RAM design
 
-- `CMakeLists.txt`
-- `LICENSE`
-- `README.md`
-- `PHASE_NOTES.md`
-- `include/syj/core/version.hpp`
-- `src/core/version.cpp`
-- `src/cli/main.cpp`
-- `tests/core_tests.cpp`
-- `cmake/.gitkeep`
-- `docs/.gitkeep`
-- `models/.gitkeep`
-- `third_party/llama.cpp/.gitkeep`
-- `platform/windows/.gitkeep`
-- `platform/linux/.gitkeep`
-- `platform/macos/.gitkeep`
-- `platform/ios/.gitkeep`
-- `platform/android/.gitkeep`
-- `platform/wasm/.gitkeep`
-- `tools/.gitkeep`
-- `.github/workflows/.gitkeep`
+- CPU-only by default.
+- mmap model loading enabled by default.
+- 1024-token context default.
+- 2 generation threads / 2 batch threads default.
+- 256 batch ceiling.
+- 128 output-token default in API; CLI uses 64.
+- Q4_K_M and smaller GGUF formats are the primary deployment target; llama.cpp performs the actual quantized tensor handling.
+- No Phase 2 memory-budget manager is introduced.
 
-## Files modified
+## SYJ API
 
-None. The target GitHub repository was empty at Phase 0 inspection time.
+`include/syj/core/runtime.hpp` deliberately hides llama.cpp types from callers. `Runtime` owns model/context/sampler and performs deterministic cleanup.
 
-## Architecture established
+## Error handling
 
-```text
-SYJ-LLM/
-├── include/syj/core/       Public C++ API headers
-├── src/core/               Core runtime implementation
-├── src/cli/                Native CLI entry point
-├── tests/                   CTest-backed native tests
-├── third_party/llama.cpp/  Reserved for pinned llama.cpp integration
-├── models/                 Local/downloaded model artifacts; not source
-├── platform/               Platform-specific adapters/build material
-│   ├── windows/
-│   ├── linux/
-│   ├── macos/
-│   ├── ios/
-│   ├── android/
-│   └── wasm/
-├── tools/                  Non-runtime developer tooling
-├── cmake/                  Future reusable CMake modules
-├── docs/                   Architecture and developer documentation
-└── .github/workflows/      Future CI definitions
-```
+The wrapper maps missing files, model-load failures, context creation failures, tokenization failures, context overflow, and decode failures to `StatusCode` values.
 
-## Build prerequisites
+## Build
 
-- CMake 3.20 or newer
-- C++17-capable compiler
-- Git
-
-No Python, Node.js, Electron, llama.cpp checkout, model, network service, or API key is required for Phase 0.
-
-## Linux / macOS validation
-
-From the extracted repository root:
+After vendoring:
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-./build/syj
 ```
 
-Expected CLI output includes:
+Termux/ARM64:
 
-```text
-SYJ LLM runtime
-Version: 0.1.0
-Vendor: SAYANJALI NEXUS PRIVATE LIMITED
-Stage: Phase 0 - Bootstrap
-Status: bootstrap OK
+```sh
+pkg install clang cmake git make
+./tools/vendor_llama.sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF
+cmake --build build --parallel 2
+ctest --test-dir build --output-on-failure
 ```
 
-## Windows validation
-
-PowerShell:
+Windows:
 
 ```powershell
+.\tools\vendor_llama.sh
 cmake -S . -B build -A x64
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
-.\build\Release\syj.exe
 ```
 
-## Memory-safety baseline
+## Model smoke test
 
-Phase 0 deliberately keeps the runtime tiny. There is no model allocation, tokenizer, thread pool, GPU context, mmap region, or network resource yet.
-
-The code uses:
-
-- C++17 standard library types
-- No raw dynamic allocation
-- No global mutable runtime state
-- A static-library boundary for the future inference core
-- CTest for an executable smoke/unit test
-
-Later phases must preserve RAII, explicit ownership, bounded allocations, checked integer conversions, and deterministic shutdown.
-
-## Performance baseline
-
-The Phase 0 binary is intentionally minimal. Performance optimization begins only after the actual inference path exists; premature optimization here would create architectural coupling without measurable benefit.
-
-## GitHub validation before push
-
-The repository was checked as `SHalimoosavi/SYJ-LLM`; it is public, uses `main` as the default branch, and had repository size 0 at inspection time.
-
-After extraction:
+Use a small GGUF model already downloaded locally. No model is shipped in source control.
 
 ```sh
-git status
-git diff --check
+./build/syj models/small-q4_k_m.gguf "Say hello from SYJ in one sentence."
 ```
 
-Then perform the platform build/test commands above.
+The CLI prints model bytes, generated text, and peak RSS where supported by the host OS.
 
-## What to verify before pushing
+## Sanitizer
 
-1. `cmake -S . -B build` succeeds.
-2. The project compiles with the selected C++17 compiler.
-3. `ctest` reports `100% tests passed`.
-4. The `syj` executable prints the expected bootstrap status.
-5. `git diff --check` reports no whitespace errors.
-6. No generated `build/` directory is accidentally added to Git.
-7. No model binaries are added to the Phase 0 commit.
+On Linux/Termux where supported:
 
-## Intentionally deferred
+```sh
+cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DSYJ_ENABLE_ASAN=ON
+cmake --build build-asan --parallel 2
+ctest --test-dir build-asan --output-on-failure
+```
 
-- llama.cpp integration
-- GGUF loading
-- mmap/model memory management
-- tokenizer and generation APIs
-- model registry
-- agent/function calling
-- GPU backends
-- mobile bridges
-- WASM/Emscripten build
-- model training/fine-tuning
-- packaging and installers
+## Benchmark status
 
-These belong to later phases and must not be mixed into Phase 0.
+No honest RAM benchmark is claimed in this package because the upstream llama.cpp source could not be retrieved into this preparation environment and no GGUF model was executed here. Phase 1 validation must record the user's real-device peak RSS with the selected small Q4_K_M model.
+
+## Before pushing
+
+1. Verify `third_party/llama.cpp` is exactly commit `391fac16460f15233a7740550d858ac96df3419d`.
+2. Confirm CMake config/build succeeds on Termux ARM64.
+3. Confirm CTest passes.
+4. Run one local GGUF prompt and capture peak RSS.
+5. Run the sanitizer build if supported.
+6. Confirm `git diff --check` and no build artifacts are staged.
+7. Confirm no GGUF/model binaries are committed.
+8. Confirm inference works after disabling network connectivity.

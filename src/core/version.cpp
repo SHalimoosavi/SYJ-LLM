@@ -1,5 +1,9 @@
 #include "syj/core/version.hpp"
 
 namespace syj::core {
-// Translation unit intentionally retained so the core is already a real library target.
-}
+
+// Version is defined inline in version.hpp.
+// This translation unit is intentionally retained for the
+// stable SYJ Core source layout.
+
+} // namespace syj::core
