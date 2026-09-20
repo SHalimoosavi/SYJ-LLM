@@ -1,223 +1,228 @@
-# SYJ LLM — Phase 3 Notes
+# SYJ LLM — Phase 4 Notes
 
-## Baseline verified before implementation
+## Baseline
 
-The Phase 3 design baseline was checked against the public GitHub repository before implementation.
-
-```text
-Repository:
-SHalimoosavi/SYJ-LLM
-
-Live HEAD:
-c54ae4cf7563abb4a4c5d51a62c63863d295fbde
-
-Verified local tags:
-v0.1.0
-v0.2.0
-
-Pinned llama.cpp:
-391fac16460f15233a7740550d858ac96df3419d
-```
-
-The Phase 2 release tag is `v0.2.0` and points to the Phase 2 commit.
-
-Phase 3 is implemented as a child of that exact baseline. No Phase 4 work is included.
-
-## Phase 2 measurements carried into Phase 3
-
-These are real measurements supplied by the Phase 2 ARM64 Termux validation:
-
-- SmolLM2-135M-Instruct-Q4_K_M.gguf: approximately `157.6 MB` peak RSS under the validated small-model run.
-- Llama-3.2-3B-Instruct-Q4_K_M.gguf: approximately `2.04 GiB` peak RSS when admitted with a `3.00 GiB` budget.
-- The same 3B model was rejected at a `1.50 GiB` budget before full model loading.
-- Phase 2's estimator calculated approximately `2.32 GiB` required for the 3B configuration.
-
-The `2.32 GiB` value is an estimator result, not a measured RSS result.
-
-## Phase 3 scope
-
-Phase 3 adds a local model registry without replacing the Phase 2 `Runtime` API.
-
-The registry provides:
-
-1. A versioned local JSON manifest.
-2. A configured local models directory.
-3. GGUF discovery by extension and GGUF magic.
-4. Metadata extraction through llama.cpp's metadata-only model path where available.
-5. Manual registration for declared metadata.
-6. Name-to-path resolution.
-7. Fresh Phase 2 memory preflight during resolution.
-8. RAM-tier classification using the same Phase 2 budget boundaries.
-9. A minimal CLI for list/show/scan.
-
-No registry operation performs a network request.
-
-## Manifest format
-
-Default file:
+Phase 4 starts from the project-owner-confirmed Phase 3 release baseline:
 
 ```text
-models/registry.json
+Repository: SHalimoosavi/SYJ-LLM
+Commit:     431c7b2872064a1d5525a8538c287f321d4ad583
+Tag:        v0.3.0
+History:    v0.1.0 -> v0.2.0 -> v0.3.0
+llama.cpp:  391fac16460f15233a7740550d858ac96df3419d
 ```
 
-Schema:
+The project owner independently verified this state with `git log`, `git ls-remote`, and `git show`. The preparation environment trusts that verification and does not claim an independent local checkout of the repository.
+
+## Phase 4 objective
+
+Phase 4 has two connected layers:
+
+1. A real CLI interface over the existing Phase 1-3 Core APIs.
+2. An optional thin localhost HTTP API foundation for the future Studio track.
+
+The HTTP layer does not become part of `syj_core`. Both CLI and HTTP call the same `ModelRegistry` and `Runtime` APIs.
+
+## Files added
+
+```text
+include/syj/api/local_api.hpp
+src/api/local_api.cpp
+include/syj/core/cli.hpp
+src/cli/commands.cpp
+tests/cli_tests.cpp
+tests/local_api_tests.cpp
+```
+
+## Files modified
+
+```text
+CMakeLists.txt
+src/cli/main.cpp
+include/syj/core/version.hpp
+README.md
+PHASE_NOTES.md
+```
+
+The Phase 1 runtime, Phase 2 memory estimator, and Phase 3 registry implementation are not replaced by this phase.
+
+## HTTP library choice
+
+Phase 4 uses the already-vendored **cpp-httplib 0.56.0** source located under the pinned llama.cpp tree:
+
+```text
+third_party/llama.cpp/vendor/cpp-httplib/
+```
+
+The exact HTTP implementation is compiled into a separate `syj_http_api` library. `syj_core` does not include or link cpp-httplib.
+
+JSON serialization uses the already-vendored nlohmann JSON header:
+
+```text
+third_party/llama.cpp/vendor/nlohmann/json.hpp
+```
+
+This choice preserves the offline/no-Python/no-Node/no-Electron runtime rule and avoids introducing a network package manager or another runtime dependency. The API layer is optional through:
+
+```text
+-DSYJ_BUILD_HTTP_API=ON|OFF
+```
+
+## API endpoint contract
+
+### GET `/v1/models`
+
+Returns the current local registry entries. Each model includes its name, architecture, parameter count, quantization declaration, file size, RAM tier, context support, local path, cached estimate, and metadata completeness flag.
+
+### POST `/v1/models/load`
+
+Request JSON:
 
 ```json
 {
-  "schema_version": 1,
-  "models": [
-    {
-      "name": "string",
-      "architecture": "string",
-      "parameter_count": 0,
-      "quantization": "string",
-      "file_size_bytes": 0,
-      "expected_ram_tier": "edge|standard|large|above_large|unknown",
-      "context_support": 0,
-      "local_path": "string",
-      "estimated_required_bytes": 0,
-      "metadata_complete": false
-    }
-  ]
+  "name": "SmolLM2-135M-Instruct-Q4_K_M",
+  "memory_budget_bytes": 1572864000,
+  "context_size": 1024,
+  "max_output_tokens": 32
 }
 ```
 
-`estimated_required_bytes` is a cached discovery value. Callers that need an admission decision use the registry's `resolve()` or `list_models_fitting_budget()` APIs, which invoke the Phase 2 estimator again against the current runtime configuration.
+The server resolves the model through `ModelRegistry`, performs the Phase 2 metadata-only memory preflight, and then loads through the existing `Runtime` API. Memory rejection retains the structured Phase 2 error message.
 
-## Metadata policy
+### POST `/v1/generate`
 
-The scanner must not guess model architecture, parameter count, or quantization from the filename.
+Request JSON:
 
-For a GGUF file that can be inspected through llama.cpp metadata:
-
-- architecture is read from `general.architecture`
-- parameter count is obtained from the model API
-- training context is obtained from the model API
-- file size comes from the local filesystem
-- RAM tier comes from the Phase 2 memory estimate
-
-Quantization is deliberately reported as `unknown` when it cannot be safely extracted through the available public model metadata API. A caller can supply a declared quantization value using manual registration.
-
-This avoids turning a filename convention into a false fact.
-
-## Public registry API
-
-Primary types:
-
-```cpp
-syj::core::RegistryConfig
-syj::core::ModelEntry
-syj::core::ResolvedModel
-syj::core::ModelRegistry
+```json
+{
+  "model": "SmolLM2-135M-Instruct-Q4_K_M",
+  "prompt": "What is 2 plus 2?"
+}
 ```
 
-Important operations:
+The response is `text/event-stream`. Token events use:
 
-```cpp
-ModelRegistry registry(config);
-
-registry.load_manifest();
-registry.save_manifest();
-
-registry.scan_directory("models", runtime_config);
-
-registry.register_model(entry);
-
-registry.get_model("model-name", entry);
-
-registry.resolve("model-name", runtime_config, resolved);
-
-registry.list_models_fitting_budget(
-    budget.max_bytes,
-    runtime_config,
-    fitting_models);
+```text
+data: {"token":"..."}
 ```
 
-`resolve()` and `list_models_fitting_budget()` reuse the Phase 2 public `Runtime::estimate_memory()` path. The registry does not duplicate the memory estimator.
+Completion:
 
-## RAM-tier classification
+```text
+event: done
+data: {"ok":true}
+```
 
-Phase 3 uses the Phase 2 policy:
+Generation errors are sent as an `event: error` SSE message containing the Core status code and human-readable message.
 
-| Tier | Required runtime budget |
-|---|---:|
-| Edge | `<= 1.50 GiB` |
-| Standard | `> 1.50 GiB` and `<= 2.50 GiB` |
-| Large | `> 2.50 GiB` and `<= 4.00 GiB` |
-| Above large | `> 4.00 GiB` |
-| Unknown | no usable estimate |
+If the requested model is not loaded, `/v1/generate` returns HTTP 409. If a model is included and differs from the loaded model, the same registry resolve + Core load path is used before generation.
 
-These are admission/classification thresholds, not claims about total device RAM safety.
+## Local security boundary
 
-## CLI
+The default server address is:
+
+```text
+127.0.0.1:8080
+```
+
+There is no authentication, multi-user isolation, rate limiting, or public deployment hardening in Phase 4. This is explicitly a local API foundation for the future Studio track. Public "SYJ Web Playground" exposure is a later security track and is not implied by this release.
+
+## CLI contract
 
 ```text
 syj model list
 syj model show <name>
 syj model scan <directory>
+syj model load <name> [--memory-budget BYTES] [--context TOKENS]
+syj run <name> <prompt> [--memory-budget BYTES] [--context TOKENS] [--max-tokens TOKENS]
+syj serve [--host 127.0.0.1] [--port 8080]
 ```
 
-The existing inference invocation remains:
+The existing positional form remains accepted:
 
 ```text
 syj <model.gguf> <prompt>
 ```
 
-No Studio HTTP API, dashboard, download manager, or remote registry command is added.
+CLI load/run resolves model names using the Phase 3 registry and calls `Runtime::load_model()` after the same registry preflight. No duplicate memory estimator was introduced.
 
-## Files added
+## CMake targets
 
-- `include/syj/core/model_registry.hpp`
-- `src/core/model_registry.cpp`
-- `tests/model_registry_tests.cpp`
-- `models/registry.json`
-
-## Files modified
-
-- `CMakeLists.txt`
-- `src/cli/main.cpp`
-- `include/syj/core/version.hpp`
-- `README.md`
-- `PHASE_NOTES.md`
-
-Phase 1 and Phase 2 runtime/memory implementation files are intentionally not rewritten by Phase 3.
-
-## Test coverage
-
-The new CTest target covers:
-
-- Edge/Standard/Large/Above-large boundary classification.
-- JSON manifest write/read round trip.
-- Manual metadata preservation.
-- Local scan handling of non-GGUF files.
-- Safe rejection/ignoring of an invalid GGUF fixture.
-
-The existing targets remain:
+Existing targets retained:
 
 ```text
+syj_core
 syj_core_tests
 syj_memory_budget_tests
-```
-
-New target:
-
-```text
 syj_model_registry_tests
 ```
 
-## Validation performed by the preparation environment
+Phase 4 targets:
 
-The implementation environment could not execute the project's CMake build against the user's vendored llama.cpp tree.
+```text
+syj_http_api
+syj_cli_tests
+syj_api_tests
+```
 
-A public GitHub read check verified the Phase 2 baseline commit, tag state, and dependency pin, but that is not a build or hardware validation.
+The CLI executable remains:
 
-Therefore this artifact makes **no claim of a successful Phase 3 build, CTest run, real-GGUF scan, or ARM64 Termux result**.
+```text
+syj
+```
 
-## Required manual validation on ARM64 Termux
+## Test coverage
 
-Extract the Phase 3 artifact over the existing repository checkout without deleting `third_party/llama.cpp`.
+### CLI tests
 
-Then:
+`tests/cli_tests.cpp` verifies argument-validation behavior in the command layer without requiring a model file.
+
+### API tests
+
+`tests/local_api_tests.cpp` verifies, against a real local HTTP server:
+
+- `/v1/models` returns a JSON registry response;
+- missing-model load returns HTTP 404 with a structured error;
+- when `SYJ_TEST_MODEL` is set, the test creates a local registry entry and exercises real model load and SSE generation.
+
+If `SYJ_TEST_MODEL` is not set, the real-GGUF load/generate portion is explicitly skipped rather than fabricated.
+
+## Validation status
+
+Phase 4 was manually validated by the project owner on the target ARM64/Termux environment after extraction over the verified Phase 3 checkout.
+
+Validation environment:
+- Platform: ARM64 / aarch64 Termux
+- Compiler: Clang 21.1.8
+- CMake: 4.4.3
+- llama.cpp dependency remains pinned to `391fac16460f15233a7740550d858ac96df3419d`
+
+Observed Phase 4 results:
+- Clean CMake build completed successfully.
+- 5/5 CTest tests passed.
+- Real `SmolLM2-135M-Instruct-Q4_K_M.gguf` was discovered through the Phase 3 registry.
+- CLI model load succeeded with a 1.50 GiB configured budget and 1024-token context.
+- Estimated requirement: `158442521` bytes.
+- Observed current/peak RSS during CLI load: `156082176` bytes.
+- CLI streamed real model generation successfully with exit code 0.
+- Local API `/v1/models` returned HTTP 200.
+- Local API `/v1/models/load` returned HTTP 200.
+- Local API `/v1/generate` returned HTTP 200 with SSE token events followed by the `done` event.
+- API validation was performed on localhost at `127.0.0.1:18080`.
+
+These are functional target-device validation results. No latency or throughput benchmark is claimed.
+
+No Git commit, tag, or push was performed by the preparation environment; repository history changes remain the project owner's responsibility.
+
+## Required ARM64 / Termux validation
+
+The following commands are the authoritative manual validation procedure.
+
+### 1. Extract over the Phase 3 checkout
+
+Keep the existing `third_party/llama.cpp` tree intact. Extract this Phase 4 artifact into the repository root.
+
+Then verify:
 
 ```sh
 cd ~/SYJ-LLM
@@ -226,111 +231,191 @@ git rev-parse HEAD
 git tag -l --sort=version:refname
 cat third_party/llama.cpp/SYJ_LLAMA_VERSION
 
-rm -rf build
+git diff --check
+```
 
+Before committing, the working tree should contain only the intended Phase 4 changes.
+
+### 2. Clean configure/build
+
+```sh
+rm -rf build
 cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
-  -DGGML_NATIVE=OFF
-
+  -DGGML_NATIVE=OFF \
+  -DSYJ_BUILD_HTTP_API=ON
 cmake --build build --parallel 1
+```
 
+### 3. Run all tests
+
+```sh
 ctest --test-dir build --output-on-failure
 ```
 
-Expected test targets after a successful build:
+Expected test names:
 
 ```text
 syj_core_tests
 syj_memory_budget_tests
 syj_model_registry_tests
+syj_cli_tests
+syj_api_tests
 ```
 
-### Registry fixture validation
+Do not replace the actual output with these expected names if a test fails.
 
-Create a disposable local model directory:
+### 4. Phase 3 registry regression
 
 ```sh
+rm -f models/registry.json
+printf '{\n  "schema_version": 1,\n  "models": []\n}\n' > models/registry.json
+
 mkdir -p ~/SYJ-LLM-REGISTRY-CHECK
-```
-
-Copy a real local GGUF into it, for example:
-
-```sh
 cp "$HOME/SYJ-EdgeMind/models/local/SmolLM2-135M-Instruct-Q4_K_M.gguf" \
   ~/SYJ-LLM-REGISTRY-CHECK/
-```
 
-Then scan:
-
-```sh
 ./build/syj model scan ~/SYJ-LLM-REGISTRY-CHECK
-```
-
-Inspect:
-
-```sh
 ./build/syj model list
+./build/syj model show SmolLM2-135M-Instruct-Q4_K_M
 ```
 
-The manifest should now contain a local entry under:
+### 5. CLI named-model load/run
 
-```text
-models/registry.json
-```
-
-Then show it:
+For the previously validated small model budget:
 
 ```sh
-./build/syj model show \
-  "SmolLM2-135M-Instruct-Q4_K_M"
+./build/syj model load SmolLM2-135M-Instruct-Q4_K_M \
+  --memory-budget 1572864000 \
+  --context 1024
+
+./build/syj run SmolLM2-135M-Instruct-Q4_K_M \
+  "What is 2 plus 2? Answer with only the number." \
+  --memory-budget 1572864000 \
+  --context 1024 \
+  --max-tokens 32
 ```
 
-### Phase 2 regression
+### 6. Structured insufficient-memory regression
 
-Run the existing real inference path:
+Use the known 3B model:
 
 ```sh
-./build/syj \
-  "$HOME/SYJ-EdgeMind/models/local/SmolLM2-135M-Instruct-Q4_K_M.gguf" \
-  "What is 2 plus 2? Answer with only the number."
+./build/syj model scan "$HOME/llama.cpp/models"
 ```
 
-### Memory-admission regression
+If the registry entry name is different in the local scan, use `./build/syj model list` to obtain the exact registered name.
 
-The registry must not bypass Phase 2 admission. Re-run the established real-model checks using the existing Phase 2 validation procedure and confirm:
+Then run the established 1.50 GiB admission case with that name:
 
-- small model remains admissible at the 1.50 GiB budget;
-- 3B model remains rejected at 1.50 GiB;
-- 3B model remains admissible at 3.00 GiB.
+```sh
+./build/syj model load "<3B-registered-name>" \
+  --memory-budget 1572864000 \
+  --context 1024
+```
 
-## What remains unvalidated
+The command should report the existing `SYJ_ERROR_INSUFFICIENT_MEMORY` structure if the same Phase 2 configuration is used.
 
-Until the project owner runs the commands above, these are explicitly **not yet measured/validated for Phase 3**:
+### 7. Start localhost API
 
-- Phase 3 compilation on ARM64 Termux.
-- Phase 3 CTest result.
-- Real GGUF discovery result.
-- Real GGUF metadata values produced by the new registry.
-- Registry scan runtime/RSS overhead.
-- Phase 3 CLI behavior on the target device.
-- Windows/macOS/Linux builds.
+Terminal 1:
+
+```sh
+cd ~/SYJ-LLM
+./build/syj serve
+```
+
+Terminal 2:
+
+```sh
+curl -sS http://127.0.0.1:8080/v1/models
+```
+
+### 8. API model load
+
+```sh
+curl -sS http://127.0.0.1:8080/v1/models/load \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"SmolLM2-135M-Instruct-Q4_K_M","memory_budget_bytes":1572864000,"context_size":1024,"max_output_tokens":32}'
+```
+
+### 9. API SSE inference
+
+```sh
+curl -N http://127.0.0.1:8080/v1/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"SmolLM2-135M-Instruct-Q4_K_M","prompt":"What is 2 plus 2? Answer with only the number."}'
+```
+
+Confirm that the response is `text/event-stream`, token events arrive incrementally, and a final `event: done` or explicit `event: error` is received.
+
+### 10. Real-model API CTest
+
+To exercise the optional real-GGUF section of `syj_api_tests`:
+
+```sh
+SYJ_TEST_MODEL="$HOME/SYJ-EdgeMind/models/local/SmolLM2-135M-Instruct-Q4_K_M.gguf" \
+ctest --test-dir build --output-on-failure -R syj_api_tests
+```
+
+This is the manual target-hardware validation for the API's model-load and SSE path.
+
+## What is validated vs what remains owner-controlled
+
+| Item | Phase 4 status |
+|---|---|
+| Phase 3 baseline identity | Verified by project owner |
+| llama.cpp exact hash | `391fac16460f15233a7740550d858ac96df3419d` |
+| Phase 4 CMake build | **Validated on ARM64/Termux** |
+| CLI compile/behavior | **Validated on ARM64/Termux** |
+| HTTP compile/server | **Validated on ARM64/Termux** |
+| CTest | **5/5 passed** |
+| Real GGUF CLI generation | **Validated with SmolLM2-135M-Instruct-Q4_K_M.gguf** |
+| Real GGUF API load/generation | **Validated with localhost API and SSE** |
+| ARM64 RSS measurement | **Validated; 156,082,176 bytes observed during CLI load** |
+| Latency/throughput benchmark | **Not performed; not claimed** |
+| Git commit/tag/push | **Owner-controlled; not performed by preparation environment** |
 
 ## Out of scope
 
-Not implemented in Phase 3:
+Phase 4 does not add:
 
-- Network model downloads.
-- Remote registry synchronization.
-- Studio API.
-- Web dashboard.
-- Fine-tuning.
-- Agents/function calling.
-- Packaging.
-- iOS.
-- macOS Metal.
-- Android JNI.
-- WASM.
+- HTML/JS/React Studio dashboard
+- public Web Playground deployment
+- authentication
+- multi-user management
+- rate limiting
+- remote model downloads
+- fine-tuning
+- agents/function calling
+- packaging
+- iOS
+- macOS Metal
+- Android JNI
+- WASM
+
+## Roadmap
+
+| Phase | Scope | Status |
+|---|---|---|
+| 0 | Bootstrap & repository structure | Complete |
+| 1 | Core inference runtime | Complete |
+| 2 | Memory safety & budget management | Complete |
+| 3 | Model registry & GGUF management | Complete |
+| 4 | CLI enhancement + local API foundation | **Current** |
+| 5 | Fine-tuning pipeline | Planned |
+| 5.5 | Agents / function calling | Planned |
+| 6 | Windows packaging | Planned |
+| 6.5 | Linux packaging | Planned |
+| 7 | iOS bridge | Planned |
+| 8 | iOS UI | Planned |
+| 8.5 | macOS + Metal | Planned |
+| 9 | Performance | Planned |
+| 9.5 | Android JNI | Planned |
+| 10 | Testing | Planned |
+| 11 | Release candidate / open-source publish | Planned |
+| 12 | WASM / GitHub Pages | Planned |
 
 ## Phase gate
 
-Do not proceed to Phase 4 until Phase 3 has been manually built, tested, real-GGUF scanned, regression-tested, committed, pushed, and confirmed by the repository owner.
+Do not proceed to the Studio dashboard track until Phase 4 has been manually built, all applicable tests have been run, real small-model CLI/API validation has been performed on the target environment, the changes have been committed and pushed by the project owner, and the owner confirms acceptance.

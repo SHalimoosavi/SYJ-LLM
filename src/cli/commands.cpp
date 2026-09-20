@@ -1,0 +1,13 @@
+#include "syj/core/cli.hpp"
+#include "syj/core/model_registry.hpp"
+#include "syj/core/runtime.hpp"
+#include <iostream>
+#include <string_view>
+namespace syj::cli { namespace {
+core::RuntimeConfig cfg(unsigned int c,unsigned int m,unsigned long long b){ core::RuntimeConfig x; x.context_size=c;x.batch_size=256;x.threads=2;x.batch_threads=2;x.max_output_tokens=m;x.use_mmap=true;x.validate_tensors=true;x.memory_budget.max_bytes=b;return x; }
+int err(const core::Status&s,int n){std::cerr<<"ERROR: "<<s.message<<'\n';return n;}
+}
+int load(const LoadOptions&o){ if(o.model_name.empty()){std::cerr<<"ERROR: model name is required\n";return 2;} core::ModelRegistry r; auto m=r.load_manifest();if(!m)return err(m,3);core::ResolvedModel x;auto q=r.resolve(o.model_name,cfg(o.context_size,64,o.memory_budget_bytes),x);if(!q)return err(q,q.code==core::StatusCode::insufficient_memory?5:4);core::Runtime rt(cfg(o.context_size,64,o.memory_budget_bytes));auto l=rt.load_model(x.entry.local_path);if(!l)return err(l,l.code==core::StatusCode::insufficient_memory?5:6);auto u=rt.memory_usage();std::cout<<"Loaded: "<<x.entry.name<<'\n'<<"RAM tier: "<<core::memory_tier_name(x.entry.expected_ram_tier)<<'\n'<<"Estimated required bytes: "<<x.memory_estimate.required_bytes<<'\n'<<"Current RSS: "<<u.current_rss_bytes<<'\n'<<"Peak RSS: "<<u.peak_rss_bytes<<'\n';return 0; }
+int run_path(const std::string &path,const std::string &prompt){ core::RuntimeConfig c=cfg(1024,64,0); core::Runtime rt(c); auto l=rt.load_model(path); if(!l)return err(l,l.code==core::StatusCode::insufficient_memory?5:6); std::cout<<"Context: "<<rt.context_size()<<" tokens\nModel bytes: "<<rt.model_bytes()<<"\nGeneration: "; auto g=rt.generate(prompt,[](std::string_view p){std::cout<<p<<std::flush;return true;}); std::cout<<"\nPeak RSS: "<<rt.peak_rss_bytes()<<" bytes\n"; return g?0:err(g,7); }
+int run(const RunOptions&o){if(o.model_name.empty()||o.prompt.empty()){std::cerr<<"ERROR: model name and prompt are required\n";return 2;}core::ModelRegistry r;auto m=r.load_manifest();if(!m)return err(m,3);auto c=cfg(o.context_size,o.max_output_tokens,o.memory_budget_bytes);core::ResolvedModel x;auto q=r.resolve(o.model_name,c,x);if(!q)return err(q,q.code==core::StatusCode::insufficient_memory?5:4);core::Runtime rt(c);auto l=rt.load_model(x.entry.local_path);if(!l)return err(l,l.code==core::StatusCode::insufficient_memory?5:6);std::cout<<"Model: "<<x.entry.name<<'\n'<<"RAM tier: "<<core::memory_tier_name(x.entry.expected_ram_tier)<<'\n'<<"Generation: ";auto g=rt.generate(o.prompt,[](std::string_view p){std::cout<<p<<std::flush;return true;});std::cout<<'\n';return g?0:err(g,7);}
+}

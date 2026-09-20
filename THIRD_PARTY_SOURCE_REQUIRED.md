@@ -1,30 +1,20 @@
-# Phase 3 artifact source note
+# Phase 4 third-party source note
 
-This Phase 3 delivery is an overlay artifact because the preparation environment
-cannot copy the repository's ~174 MB vendored `third_party/llama.cpp` source tree.
+The Phase 4 artifact intentionally does not duplicate the large, unchanged `third_party/llama.cpp` source tree.
 
-The artifact therefore does **not** claim to be a byte-for-byte self-contained
-repository archive.
-
-Extract it over the existing `~/SYJ-LLM` checkout at the verified Phase 2
-baseline:
-
-```text
-c54ae4cf7563abb4a4c5d51a62c63863d295fbde
-```
-
-Do not delete or replace:
-
-```text
-third_party/llama.cpp/
-```
-
-The required dependency identity remains:
+The project baseline already contains the exact pinned llama.cpp tree required by this phase:
 
 ```text
 391fac16460f15233a7740550d858ac96df3419d
 ```
 
-All Phase 3 source and documentation changes required by the phase are included
-in this artifact. The repository owner must perform the actual CMake build,
-CTest run, real-GGUF discovery, and ARM64 Termux validation after extraction.
+Phase 4 additionally consumes the already-vendored sources inside that tree:
+
+```text
+third_party/llama.cpp/vendor/cpp-httplib/
+third_party/llama.cpp/vendor/nlohmann/
+```
+
+Preserve the existing `third_party/llama.cpp` directory when extracting the Phase 4 artifact. Do not replace it with another llama.cpp version or an unpinned checkout.
+
+This file is a packaging note for the Phase 4 source artifact; it is not a claim that the artifact contains the complete ~174 MB llama.cpp tree.
