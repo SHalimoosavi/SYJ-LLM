@@ -1,0 +1,3 @@
+{"messages":[{"role":"user","content":"What is SYJ LLM?"},{"role":"assistant","content":"SYJ LLM is an offline-first edge language-model runtime by SAYANJALI, using a C/C++ inference core and GGUF models."}]}
+{"messages":[{"role":"user","content":"Why does SYJ use GGUF?"},{"role":"assistant","content":"GGUF provides a practical local model format for the SYJ runtime and its llama.cpp inference backend."}]}
+{"messages":[{"role":"user","content":"What is the Phase 5 goal?"},{"role":"assistant","content":"Phase 5 creates a fine-tuning pipeline that produces a GGUF model loadable by the existing SYJ runtime."}]}

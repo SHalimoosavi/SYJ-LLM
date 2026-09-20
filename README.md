@@ -1,23 +1,23 @@
 # SYJ LLM
 
-**Offline-first, low-RAM LLM runtime, local GGUF registry, and localhost API foundation in C++17.**
+**Offline-first, low-RAM LLM runtime, local GGUF registry, localhost API foundation, and external fine-tuning pipeline in C++17.**
 
 SYJ is a native edge runtime built around an exact pinned `llama.cpp` commit. Phase 4 turns the Phase 1-3 core into a usable command-line interface and adds an optional embedded localhost HTTP layer for the future SYJ LLM Studio track.
 
-## Phase 4 baseline
+## Phase 5 baseline
 
 The project owner confirmed this baseline using local `git log`, `git ls-remote`, and `git show` checks. This documentation records that owner verification; it is not an independently reproduced Git history check by the artifact preparation environment.
 
 ```text
-Commit: 431c7b2872064a1d5525a8538c287f321d4ad583
-Tag:    v0.3.0
-History: v0.1.0 -> v0.2.0 -> v0.3.0
+Commit: 721962eafe245ced6e9507027748dd7e25377697
+Tag:    v0.4.0
+History: v0.1.0 -> v0.2.0 -> v0.3.0 -> v0.4.0
 llama.cpp: 391fac16460f15233a7740550d858ac96df3419d
 ```
 
 ## Status
 
-**Current phase: Phase 4 — CLI Enhancement + Local API Foundation**
+**Current phase: Phase 5 — Fine-Tuning Pipeline**
 
 Implemented:
 
@@ -38,6 +38,10 @@ Implemented:
 - [x] CLI/API share the same `ModelRegistry` and `Runtime` core APIs
 - [x] API is localhost-only by default
 - [x] CTest coverage for CLI behavior and API endpoint contracts
+- [x] Phase 5 external LoRA/QLoRA fine-tuning pipeline tooling
+- [x] Qwen/Qwen3-1.7B model-card and Apache-2.0 attribution package
+- [x] HF-to-GGUF conversion and Q4_K_M quantization tooling
+- [x] Phase 5 pipeline asset CTest coverage
 
 Not implemented / later:
 
@@ -45,7 +49,7 @@ Not implemented / later:
 - [ ] Public Web Playground exposure
 - [ ] Authentication, multi-user access, rate limiting
 - [ ] Remote model downloading/synchronization
-- [ ] Fine-tuning
+- [ ] Final trained SYJ-Model-v1 artifact validation
 - [ ] Agents/function calling
 - [ ] Windows packaging
 - [ ] Linux packaging/release artifacts
@@ -274,8 +278,8 @@ Repository: https://github.com/SHalimoosavi/SYJ-LLM
 | 1 | Core inference runtime | Complete |
 | 2 | Memory safety & budget management | Complete |
 | 3 | Model registry & GGUF management | Complete |
-| 4 | CLI enhancement + local API foundation | **Current** |
-| 5 | Fine-tuning pipeline | Planned |
+| 4 | CLI enhancement + local API foundation | Complete |
+| 5 | Fine-tuning pipeline | **Current** |
 | 5.5 | Agents / function calling | Planned |
 | 6 | Windows packaging | Planned |
 | 6.5 | Linux packaging | Planned |

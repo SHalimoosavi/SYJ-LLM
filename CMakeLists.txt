@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(SYJLLM VERSION 0.4.0 LANGUAGES CXX)
+project(SYJLLM VERSION 0.5.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -128,6 +128,13 @@ if(SYJ_BUILD_TESTS)
         )
         add_test(NAME syj_api_tests COMMAND syj_api_tests)
     endif()
+
+    add_executable(syj_phase5_pipeline_tests tests/phase5_pipeline_tests.cpp)
+    target_compile_features(syj_phase5_pipeline_tests PRIVATE cxx_std_17)
+    target_compile_definitions(syj_phase5_pipeline_tests PRIVATE
+        SYJ_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    add_test(NAME syj_phase5_pipeline_tests COMMAND syj_phase5_pipeline_tests)
 endif()
 
 include(GNUInstallDirs)

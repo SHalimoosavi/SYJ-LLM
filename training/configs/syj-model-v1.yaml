@@ -1,0 +1,32 @@
+base_model: Qwen/Qwen3-1.7B
+output_name: SYJ-Model-v1
+dataset_format: messages-jsonl
+max_seq_length: 1024
+
+training:
+  method: qlora
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  learning_rate: 0.0002
+  logging_steps: 1
+  save_steps: 50
+  bf16: true
+  gradient_checkpointing: true
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+notes:
+  - "Smoke-test configuration only; use a curated dataset for real training."
+  - "GPU/cloud/desktop hardware is required for practical training."

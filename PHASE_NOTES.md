@@ -419,3 +419,198 @@ Phase 4 does not add:
 ## Phase gate
 
 Do not proceed to the Studio dashboard track until Phase 4 has been manually built, all applicable tests have been run, real small-model CLI/API validation has been performed on the target environment, the changes have been committed and pushed by the project owner, and the owner confirms acceptance.
+
+# SYJ LLM — Phase 5 Notes
+
+## Baseline
+
+Phase 5 starts from the project-owner-confirmed Phase 4 release baseline:
+
+Repository: SHalimoosavi/SYJ-LLM
+Commit: 721962eafe245ced6e9507027748dd7e25377697
+Tag: v0.4.0
+History: v0.1.0 -> v0.2.0 -> v0.3.0 -> v0.4.0
+llama.cpp: 391fac16460f15233a7740550d858ac96df3419d
+
+## Objective
+
+Phase 5 adds an external training pipeline for producing the
+SYJ-Model-v1 model artifact while preserving the existing SYJ C/C++
+runtime boundary.
+
+The runtime remains Python-free. Python is used only by the training
+and model-conversion tooling.
+
+## Training pipeline
+
+Dataset JSONL
+    |
+    v
+Dataset validation
+    |
+    v
+Qwen/Qwen3-1.7B base model
+    |
+    v
+LoRA / QLoRA fine-tuning
+    |
+    v
+LoRA adapter
+    |
+    v
+Adapter merge
+    |
+    v
+Merged Hugging Face model
+    |
+    v
+llama.cpp HF -> GGUF conversion
+    |
+    v
+F16 GGUF
+    |
+    v
+Q4_K_M quantization
+    |
+    v
+SYJ-Model-v1.gguf
+    |
+    v
+Existing Phase 3 registry
+    |
+    v
+Existing Phase 2 memory estimator
+    |
+    v
+Existing Phase 4 CLI/API validation
+
+## Base model
+
+Target training base:
+
+Qwen/Qwen3-1.7B
+
+The Phase 5 model card contains the upstream attribution and Apache
+License 2.0 notice required for the base model.
+
+Phase 5 does not distribute trained weights or claim that a trained
+SYJ-Model-v1 artifact has been produced by the preparation package.
+
+## Training configuration
+
+The supplied smoke-test configuration uses:
+
+method: qlora
+epochs: 1
+batch size: 1
+gradient accumulation: 16
+learning rate: 0.0002
+max sequence length: 1024
+
+LoRA:
+r: 16
+alpha: 32
+dropout: 0.05
+
+Training requires a suitable GPU/cloud/desktop environment. The
+Android/Termux runtime environment is not treated as a training
+environment.
+
+## Exact llama.cpp converter qualification
+
+Phase 5 uses the existing pinned llama.cpp source:
+
+391fac16460f15233a7740550d858ac96df3419d
+
+The converter source at that pinned revision was inspected and confirms
+the interfaces used by the Phase 5 conversion script:
+
+--outfile
+--outtype
+
+The conversion step requests:
+
+--outtype f16
+
+The conversion script also performs a local --help check before
+execution.
+
+Actual conversion execution remains owner-controlled and requires the
+Python dependencies needed by the pinned converter.
+
+## Quantization
+
+The Phase 5 pipeline targets:
+
+Q4_K_M
+
+The pinned llama.cpp source contains the llama-quantize target and
+supports the requested Q4_K_M quantization path.
+
+## Final artifact
+
+The required final Phase 5 artifact name is:
+
+SYJ-Model-v1.gguf
+
+The existing Phase 3 registry is used for registration. The registry
+derives the model identity from the GGUF filename and calculates the
+RAM tier using the existing Phase 2 estimator.
+
+The RAM tier is not manually assigned by Phase 5.
+
+## Runtime boundary
+
+Phase 5 does not modify:
+
+- syj_core inference architecture
+- Phase 2 memory-budget enforcement
+- Phase 3 registry architecture
+- Phase 4 HTTP API architecture
+- existing llama.cpp pin
+- existing C/C++ inference path
+
+The final model must be validated through the same existing runtime
+path used by earlier phases.
+
+## Phase 5 validation
+
+Phase 5 includes:
+
+- dataset validation
+- training configuration validation
+- training-script interface checks
+- converter interface checks
+- model registration tooling checks
+- CTest coverage for Phase 5 assets
+- existing Phase 1-4 regression coverage
+
+The training and conversion steps require an appropriate external
+training environment and are not expected to execute on the low-RAM
+Android/Termux validation device.
+
+## Acceptance boundary
+
+Phase 5 is not considered fully validated merely because the pipeline
+scripts exist.
+
+Final acceptance requires owner-controlled execution of the training,
+merge, GGUF conversion, Q4_K_M quantization, registry registration, and
+runtime validation of the resulting SYJ-Model-v1.gguf.
+
+## Out of scope
+
+Phase 5 does not add:
+
+- agents
+- function calling
+- Studio dashboard
+- multi-user authentication
+- remote model downloading
+- Windows packaging
+- Linux packaging
+- iOS
+- macOS Metal
+- Android JNI
+- WASM
+- production cloud training infrastructure
