@@ -1,96 +1,68 @@
-# SYJ-LLM Phase 1 — Core Inference Runtime
+# SYJ LLM — Phase 1 Notes
 
-## Pinned llama.cpp revision
+## Phase
 
-**v0.4.1 / commit `391fac16460f15233a7740550d858ac96df3419d`** (14 Sep 2026).
+Phase 1 — Core Inference Runtime
 
-This is the stable v0.4.1 release, not a moving nightly. The official release metadata identifies target commit `391fac16460f15233a7740550d858ac96df3419d` and notes API/core fixes including the new load-mode API and updates to ggml 0.24.0. SYJ uses `LLAMA_LOAD_MODE_MMAP`, which is the current mmap-first load path at this revision.
+## llama.cpp Dependency Pin
 
-## Packaging note
+SYJ uses the exact upstream llama.cpp commit:
 
-The current build environment used to prepare this artifact cannot retrieve the ~36 MB upstream llama.cpp source archive. Therefore this bundle contains the complete SYJ integration layer plus a deterministic vendor script, but **is not falsely represented as self-contained** until `third_party/llama.cpp` is populated at `b29c606`.
+`391fac16460f15233a7740550d858ac96df3419d`
 
-Run `tools/vendor_llama.sh` once before configuring. Inference itself performs no network access.
+This exact commit is the authoritative dependency identity for Phase 1.
 
-## Low-RAM design
+SYJ does not identify the dependency by a release label. The commit SHA is used consistently across the build configuration, vendor metadata, documentation, and vendor script.
 
-- CPU-only by default.
-- mmap model loading enabled by default.
-- 1024-token context default.
-- 2 generation threads / 2 batch threads default.
-- 256 batch ceiling.
-- 128 output-token default in API; CLI uses 64.
-- Q4_K_M and smaller GGUF formats are the primary deployment target; llama.cpp performs the actual quantized tensor handling.
-- No Phase 2 memory-budget manager is introduced.
+## Vendored Source
 
-## SYJ API
+The Phase 1 repository contains the llama.cpp source under:
 
-`include/syj/core/runtime.hpp` deliberately hides llama.cpp types from callers. `Runtime` owns model/context/sampler and performs deterministic cleanup.
+`third_party/llama.cpp`
 
-## Error handling
+The vendored source is used directly by the SYJ CMake build.
 
-The wrapper maps missing files, model-load failures, context creation failures, tokenization failures, context overflow, and decode failures to `StatusCode` values.
+No network access is required during inference.
 
-## Build
+## Core Runtime
 
-After vendoring:
+Phase 1 provides the SYJ Core inference wrapper around llama.cpp.
 
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
-```
+The public SYJ API does not expose raw llama.cpp types.
 
-Termux/ARM64:
+Implemented capabilities include:
 
-```sh
-pkg install clang cmake git make
-./tools/vendor_llama.sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF
-cmake --build build --parallel 2
-ctest --test-dir build --output-on-failure
-```
+- GGUF model loading
+- Memory-mapped model loading
+- Tokenization
+- Prompt evaluation
+- Token generation
+- Streaming token callback
+- Deterministic cleanup
+- Context-size validation
+- Configuration validation
+- Callback cancellation
+- Model-load error handling
+- Context overflow handling
+- Low-RAM-oriented default runtime configuration
 
-Windows:
+Default runtime configuration:
 
-```powershell
-.\tools\vendor_llama.sh
-cmake -S . -B build -A x64
-cmake --build build --config Release
-ctest --test-dir build -C Release --output-on-failure
-```
+- Context: 1024 tokens
+- Threads: 2
+- Batch size: 256
+- CPU-first execution
+- mmap model loading
 
-## Model smoke test
+## Sampling
 
-Use a small GGUF model already downloaded locally. No model is shipped in source control.
+Phase 1 intentionally uses deterministic greedy sampling.
 
-```sh
-./build/syj models/small-q4_k_m.gguf "Say hello from SYJ in one sentence."
-```
+Advanced sampling strategies are outside the Phase 1 scope.
 
-The CLI prints model bytes, generated text, and peak RSS where supported by the host OS.
+## CLI
 
-## Sanitizer
+The Phase 1 CLI provides:
 
-On Linux/Termux where supported:
-
-```sh
-cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DSYJ_ENABLE_ASAN=ON
-cmake --build build-asan --parallel 2
-ctest --test-dir build-asan --output-on-failure
-```
-
-## Benchmark status
-
-No honest RAM benchmark is claimed in this package because the upstream llama.cpp source could not be retrieved into this preparation environment and no GGUF model was executed here. Phase 1 validation must record the user's real-device peak RSS with the selected small Q4_K_M model.
-
-## Before pushing
-
-1. Verify `third_party/llama.cpp` is exactly commit `391fac16460f15233a7740550d858ac96df3419d`.
-2. Confirm CMake config/build succeeds on Termux ARM64.
-3. Confirm CTest passes.
-4. Run one local GGUF prompt and capture peak RSS.
-5. Run the sanitizer build if supported.
-6. Confirm `git diff --check` and no build artifacts are staged.
-7. Confirm no GGUF/model binaries are committed.
-8. Confirm inference works after disabling network connectivity.
+```text
+syj <model.gguf> <prompt>

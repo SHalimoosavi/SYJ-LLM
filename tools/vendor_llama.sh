@@ -1,16 +1,21 @@
 #!/usr/bin/env sh
+
 set -eu
 
+# Exact immutable upstream llama.cpp commit.
+# This SHA is the sole dependency identity used by SYJ.
 REV=391fac16460f15233a7740550d858ac96df3419d
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
 DEST="$ROOT/third_party/llama.cpp"
+
 TMP="${TMPDIR:-/tmp}/syj-llama-$REV"
 
 rm -rf "$TMP"
 mkdir -p "$TMP"
 
-echo "Fetching llama.cpp v0.4.1 ($REV) ..."
+echo "Fetching llama.cpp commit $REV ..."
 
 git clone \
     --filter=blob:none \
@@ -21,14 +26,20 @@ git clone \
 cd "$TMP/repo"
 
 git fetch --depth 1 origin "$REV"
+
 git checkout --detach "$REV"
 
 rm -rf "$DEST"
+
 mkdir -p "$DEST"
 
 git archive "$REV" | tar -x -C "$DEST"
 
+# Store the exact immutable dependency identity.
 printf '%s\n' "$REV" > "$DEST/SYJ_LLAMA_REVISION"
-printf '%s\n' "v0.4.1" > "$DEST/SYJ_LLAMA_VERSION"
 
-echo "Vendored llama.cpp v0.4.1 at $REV"
+# Keep the metadata file for compatibility with the Phase 1 layout,
+# but store the exact commit instead of an ambiguous release label.
+printf '%s\n' "$REV" > "$DEST/SYJ_LLAMA_VERSION"
+
+echo "Vendored llama.cpp at commit $REV"

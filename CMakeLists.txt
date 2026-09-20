@@ -10,11 +10,11 @@ option(SYJ_BUILD_CLI "Build SYJ CLI" ON)
 option(SYJ_ENABLE_WARNINGS "Enable strict compiler warnings" ON)
 option(SYJ_ENABLE_ASAN "Enable AddressSanitizer/UndefinedBehaviorSanitizer" OFF)
 
-set(SYJ_LLAMA_REVISION "391fac16460f15233a7740550d858ac96df3419d" CACHE STRING "Pinned llama.cpp revision")
+set(SYJ_LLAMA_REVISION "391fac16460f15233a7740550d858ac96df3419d" CACHE STRING "Pinned llama.cpp upstream commit")
 set(SYJ_LLAMA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp" CACHE PATH "Vendored llama.cpp source directory")
 
 if(NOT EXISTS "${SYJ_LLAMA_SOURCE_DIR}/CMakeLists.txt")
-    message(FATAL_ERROR "Pinned llama.cpp source is missing. Populate third_party/llama.cpp at revision ${SYJ_LLAMA_REVISION} before configuring.")
+    message(FATAL_ERROR "Pinned llama.cpp source is missing. Populate third_party/llama.cpp at exact commit ${SYJ_LLAMA_REVISION} before configuring.")
 endif()
 
 # Keep llama.cpp build surface minimal for SYJ's low-RAM CPU-first runtime.

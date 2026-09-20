@@ -1,9 +1,14 @@
 # SYJ LLM — Phase 1
 
-Core inference runtime integration for SYJ, built around llama.cpp v0.4.1 commit `b29c606`.
+Core inference runtime integration for SYJ, built around the exact llama.cpp upstream commit:
 
-## Important
+`391fac16460f15233a7740550d858ac96df3419d`
 
-Run `tools/vendor_llama.sh` once to populate the pinned upstream source before configuring. The runtime itself has no network code and requires no API key or cloud service.
+## Dependency Pin
 
-See `PHASE_NOTES.md` for the validation sequence.
+SYJ does not identify its llama.cpp dependency by a release/version label.
+
+The authoritative dependency identity is the exact immutable upstream commit:
+
+```text
+391fac16460f15233a7740550d858ac96df3419d
