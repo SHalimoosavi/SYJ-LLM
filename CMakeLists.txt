@@ -34,6 +34,7 @@ add_subdirectory("${SYJ_LLAMA_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/llama.cpp" EXCLU
 
 add_library(syj_core STATIC
     src/core/version.cpp
+    src/core/memory_budget.cpp
     src/core/runtime.cpp
 )
 
@@ -42,6 +43,10 @@ target_include_directories(syj_core PUBLIC
 )
 target_link_libraries(syj_core PRIVATE llama)
 target_compile_features(syj_core PUBLIC cxx_std_17)
+
+if(WIN32)
+    target_link_libraries(syj_core PRIVATE psapi)
+endif()
 
 if(SYJ_ENABLE_WARNINGS)
     if(MSVC)
@@ -70,9 +75,14 @@ endif()
 
 if(SYJ_BUILD_TESTS)
     enable_testing()
+
     add_executable(syj_core_tests tests/core_tests.cpp)
     target_link_libraries(syj_core_tests PRIVATE syj_core)
     add_test(NAME syj_core_tests COMMAND syj_core_tests)
+
+    add_executable(syj_memory_budget_tests tests/memory_budget_tests.cpp)
+    target_link_libraries(syj_memory_budget_tests PRIVATE syj_core)
+    add_test(NAME syj_memory_budget_tests COMMAND syj_memory_budget_tests)
 endif()
 
 include(GNUInstallDirs)
