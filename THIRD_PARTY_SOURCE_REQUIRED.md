@@ -1,13 +1,30 @@
-# Phase 2 dependency note
+# Phase 3 artifact source note
 
-This Phase 2 delivery is an overlay ZIP because the complete vendored llama.cpp tree from baseline commit `696529857642f607b86618a7f24c13e888c49bdc` was not available to the file-generation environment.
+This Phase 3 delivery is an overlay artifact because the preparation environment
+cannot copy the repository's ~174 MB vendored `third_party/llama.cpp` source tree.
 
-The existing repository must retain:
+The artifact therefore does **not** claim to be a byte-for-byte self-contained
+repository archive.
 
-`third_party/llama.cpp/`
+Extract it over the existing `~/SYJ-LLM` checkout at the verified Phase 2
+baseline:
 
-at the exact pinned commit:
+```text
+c54ae4cf7563abb4a4c5d51a62c63863d295fbde
+```
 
-`391fac16460f15233a7740550d858ac96df3419d`
+Do not delete or replace:
 
-Do not run the vendor script as part of Phase 2 validation if the existing vendored source is already present. Do not replace or re-vendor the pinned tree.
+```text
+third_party/llama.cpp/
+```
+
+The required dependency identity remains:
+
+```text
+391fac16460f15233a7740550d858ac96df3419d
+```
+
+All Phase 3 source and documentation changes required by the phase are included
+in this artifact. The repository owner must perform the actual CMake build,
+CTest run, real-GGUF discovery, and ARM64 Termux validation after extraction.

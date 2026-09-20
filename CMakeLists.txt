@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(SYJLLM VERSION 0.2.0 LANGUAGES CXX)
+project(SYJLLM VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,7 +17,6 @@ if(NOT EXISTS "${SYJ_LLAMA_SOURCE_DIR}/CMakeLists.txt")
     message(FATAL_ERROR "Pinned llama.cpp source is missing. Populate third_party/llama.cpp at exact commit ${SYJ_LLAMA_REVISION} before configuring.")
 endif()
 
-# Keep llama.cpp build surface minimal for SYJ's low-RAM CPU-first runtime.
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
@@ -35,12 +34,14 @@ add_subdirectory("${SYJ_LLAMA_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/llama.cpp" EXCLU
 add_library(syj_core STATIC
     src/core/version.cpp
     src/core/memory_budget.cpp
+    src/core/model_registry.cpp
     src/core/runtime.cpp
 )
 
 target_include_directories(syj_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
 target_link_libraries(syj_core PRIVATE llama)
 target_compile_features(syj_core PUBLIC cxx_std_17)
 
@@ -83,6 +84,10 @@ if(SYJ_BUILD_TESTS)
     add_executable(syj_memory_budget_tests tests/memory_budget_tests.cpp)
     target_link_libraries(syj_memory_budget_tests PRIVATE syj_core)
     add_test(NAME syj_memory_budget_tests COMMAND syj_memory_budget_tests)
+
+    add_executable(syj_model_registry_tests tests/model_registry_tests.cpp)
+    target_link_libraries(syj_model_registry_tests PRIVATE syj_core)
+    add_test(NAME syj_model_registry_tests COMMAND syj_model_registry_tests)
 endif()
 
 include(GNUInstallDirs)

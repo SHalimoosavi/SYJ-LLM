@@ -1,213 +1,336 @@
-# SYJ LLM — Phase 2 Notes
+# SYJ LLM — Phase 3 Notes
 
 ## Baseline verified before implementation
 
-Live GitHub `main` was checked before preparing this Phase 2 artifact.
+The Phase 3 design baseline was checked against the public GitHub repository before implementation.
+
+```text
+Repository:
+SHalimoosavi/SYJ-LLM
 
 Live HEAD:
+c54ae4cf7563abb4a4c5d51a62c63863d295fbde
 
-`696529857642f607b86618a7f24c13e888c49bdc`
-
-Commit:
-
-`Pin llama.cpp dependency to exact upstream commit`
-
-Current release tag state at preparation time:
-
-`v0.1.0` points to the same commit.
-
-The older planning note that described `v0.2.0` as the live tag is stale; the live repository currently exposes `v0.1.0`.
+Verified local tags:
+v0.1.0
+v0.2.0
 
 Pinned llama.cpp:
-
-`391fac16460f15233a7740550d858ac96df3419d`
-
-## Phase 1 measurement that drives Phase 2
-
-The real Phase 1 Termux/ARM64 validation used:
-
-`Llama-3.2-3B-Instruct-Q4_K_M.gguf`
-
-with context `1024` and recorded:
-
-- Model bytes: `2011539712`
-- CPU mapped model buffer: approximately `1918.35 MiB`
-- KV cache: `112.00 MiB`
-- CPU compute buffer: `131.25 MiB`
-- Peak RSS: `2195750912` bytes, approximately `2.04 GiB`
-
-This is why Phase 2 does **not** claim that a 3B model is safe under a 1.5–2.0 GiB budget on a 4 GB device.
-
-## Memory-tier policy
-
-These are admission-policy targets, not hardware safety certifications. The project must continue to validate real models on real devices before calling a tier safe.
-
-| Tier | Runtime budget | Intended model class | Basis |
-|---|---:|---|---|
-| Edge | `<= 1.50 GiB` | Target for smaller models, including `<= 2B` candidates | Leaves the 3B measured footprint outside the tier. A real small-model measurement is still required. |
-| Standard | `2.50 GiB` | 3B-class target | The measured 3B peak was about `2.04 GiB`; Phase 2's estimator adds KV, compute, and 10% runtime overhead, producing roughly `2.3 GiB` at 1024 context. `2.50 GiB` leaves additional admission headroom. |
-| Large | `4.00 GiB` | Models above 3B | No Phase 1 measurement certifies this tier. It is an explicit budget tier for later validation rather than a safety claim. |
-
-A device's total physical RAM is not treated as equivalent to the runtime budget. Android/system processes, allocator behavior, filesystem cache, and other applications consume memory outside SYJ.
-
-## Estimator design
-
-The pre-load estimator performs a metadata-only llama.cpp model load with `no_alloc=true`. It does not materialize the real model weights before admission.
-
-The estimate contains:
-
-1. **Model weights** — `llama_model_size()` from the metadata-only model representation.
-2. **KV cache** — calculated from context length, layer count, KV head count, and head dimension, assuming the Phase 1 F16 K/V cache. When model geometry cannot be derived, a conservative fallback of `256 KiB/token` is used.
-3. **Compute buffer** — calibrated against the Phase 1 3B observation at batch 256 and scaled by batch size and thread count. The calibration coefficient is `6.8%` of model bytes at the Phase 1 baseline.
-4. **Runtime overhead** — an additional `10%` of the model + KV + compute subtotal.
-
-The estimate is intentionally conservative and is an admission guard, not a promise of exact allocator usage.
-
-For the Phase 1 3B model, the model + KV + compute components are approximately `2.12 GiB`, and the 10% overhead produces an estimated requirement of roughly `2.32 GiB` at context 1024/batch 256/2 threads.
-
-## Hard budget enforcement
-
-`MemoryBudget.max_bytes == 0` disables admission control for backward compatibility.
-
-For a non-zero budget, `Runtime::load_model()` performs this sequence:
-
-1. Validate runtime configuration.
-2. Perform metadata-only model inspection.
-3. Estimate weights + KV + compute + overhead.
-4. Compare the estimate to `MemoryBudget.max_bytes`.
-5. Return `SYJ_ERROR_INSUFFICIENT_MEMORY` before real model loading if the estimate exceeds the budget.
-6. Load the real GGUF only after admission succeeds.
-7. If the actual context allocation still fails, return a clean status rather than truncating or silently continuing.
-
-## Exact error shape
-
-Implemented budget rejection shape:
-
-```text
-SYJ_ERROR_INSUFFICIENT_MEMORY
-Required: <estimated GiB>
-Available budget: <budget GiB>
-Suggested: Reduce context from <current> to <reduced>, or use a smaller quantized model.
+391fac16460f15233a7740550d858ac96df3419d
 ```
 
-For example:
+The Phase 2 release tag is `v0.2.0` and points to the Phase 2 commit.
+
+Phase 3 is implemented as a child of that exact baseline. No Phase 4 work is included.
+
+## Phase 2 measurements carried into Phase 3
+
+These are real measurements supplied by the Phase 2 ARM64 Termux validation:
+
+- SmolLM2-135M-Instruct-Q4_K_M.gguf: approximately `157.6 MB` peak RSS under the validated small-model run.
+- Llama-3.2-3B-Instruct-Q4_K_M.gguf: approximately `2.04 GiB` peak RSS when admitted with a `3.00 GiB` budget.
+- The same 3B model was rejected at a `1.50 GiB` budget before full model loading.
+- Phase 2's estimator calculated approximately `2.32 GiB` required for the 3B configuration.
+
+The `2.32 GiB` value is an estimator result, not a measured RSS result.
+
+## Phase 3 scope
+
+Phase 3 adds a local model registry without replacing the Phase 2 `Runtime` API.
+
+The registry provides:
+
+1. A versioned local JSON manifest.
+2. A configured local models directory.
+3. GGUF discovery by extension and GGUF magic.
+4. Metadata extraction through llama.cpp's metadata-only model path where available.
+5. Manual registration for declared metadata.
+6. Name-to-path resolution.
+7. Fresh Phase 2 memory preflight during resolution.
+8. RAM-tier classification using the same Phase 2 budget boundaries.
+9. A minimal CLI for list/show/scan.
+
+No registry operation performs a network request.
+
+## Manifest format
+
+Default file:
 
 ```text
-SYJ_ERROR_INSUFFICIENT_MEMORY
-Required: 2.32 GiB
-Available budget: 1.50 GiB
-Suggested: Reduce context from 1024 to 512, or use a smaller quantized model.
+models/registry.json
 ```
 
-## Queryable memory state
+Schema:
 
-`Runtime::memory_usage()` exposes:
+```json
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "name": "string",
+      "architecture": "string",
+      "parameter_count": 0,
+      "quantization": "string",
+      "file_size_bytes": 0,
+      "expected_ram_tier": "edge|standard|large|above_large|unknown",
+      "context_support": 0,
+      "local_path": "string",
+      "estimated_required_bytes": 0,
+      "metadata_complete": false
+    }
+  ]
+}
+```
 
-- current RSS
-- peak RSS
-- configured budget
-- estimated required bytes
+`estimated_required_bytes` is a cached discovery value. Callers that need an admission decision use the registry's `resolve()` or `list_models_fitting_budget()` APIs, which invoke the Phase 2 estimator again against the current runtime configuration.
 
-This is intentionally a runtime API rather than CLI-only output so a later Studio/dashboard layer can consume the same state without adding dashboard code to Phase 2.
+## Metadata policy
 
-## Files added/modified by Phase 2
+The scanner must not guess model architecture, parameter count, or quantization from the filename.
 
-Modified:
+For a GGUF file that can be inspected through llama.cpp metadata:
+
+- architecture is read from `general.architecture`
+- parameter count is obtained from the model API
+- training context is obtained from the model API
+- file size comes from the local filesystem
+- RAM tier comes from the Phase 2 memory estimate
+
+Quantization is deliberately reported as `unknown` when it cannot be safely extracted through the available public model metadata API. A caller can supply a declared quantization value using manual registration.
+
+This avoids turning a filename convention into a false fact.
+
+## Public registry API
+
+Primary types:
+
+```cpp
+syj::core::RegistryConfig
+syj::core::ModelEntry
+syj::core::ResolvedModel
+syj::core::ModelRegistry
+```
+
+Important operations:
+
+```cpp
+ModelRegistry registry(config);
+
+registry.load_manifest();
+registry.save_manifest();
+
+registry.scan_directory("models", runtime_config);
+
+registry.register_model(entry);
+
+registry.get_model("model-name", entry);
+
+registry.resolve("model-name", runtime_config, resolved);
+
+registry.list_models_fitting_budget(
+    budget.max_bytes,
+    runtime_config,
+    fitting_models);
+```
+
+`resolve()` and `list_models_fitting_budget()` reuse the Phase 2 public `Runtime::estimate_memory()` path. The registry does not duplicate the memory estimator.
+
+## RAM-tier classification
+
+Phase 3 uses the Phase 2 policy:
+
+| Tier | Required runtime budget |
+|---|---:|
+| Edge | `<= 1.50 GiB` |
+| Standard | `> 1.50 GiB` and `<= 2.50 GiB` |
+| Large | `> 2.50 GiB` and `<= 4.00 GiB` |
+| Above large | `> 4.00 GiB` |
+| Unknown | no usable estimate |
+
+These are admission/classification thresholds, not claims about total device RAM safety.
+
+## CLI
+
+```text
+syj model list
+syj model show <name>
+syj model scan <directory>
+```
+
+The existing inference invocation remains:
+
+```text
+syj <model.gguf> <prompt>
+```
+
+No Studio HTTP API, dashboard, download manager, or remote registry command is added.
+
+## Files added
+
+- `include/syj/core/model_registry.hpp`
+- `src/core/model_registry.cpp`
+- `tests/model_registry_tests.cpp`
+- `models/registry.json`
+
+## Files modified
 
 - `CMakeLists.txt`
-- `include/syj/core/runtime.hpp`
-- `src/core/runtime.cpp`
-- `src/cli/main.cpp` — retained Phase 1 behavior while using the updated runtime API
-- `include/syj/core/version.hpp` — unchanged content retained for complete source overlay
-- `src/core/version.cpp` — unchanged content retained for complete source overlay
-- `tests/core_tests.cpp` — unchanged Phase 1 test content retained
+- `src/cli/main.cpp`
+- `include/syj/core/version.hpp`
 - `README.md`
 - `PHASE_NOTES.md`
 
-Added:
+Phase 1 and Phase 2 runtime/memory implementation files are intentionally not rewritten by Phase 3.
 
-- `src/core/memory_budget.cpp`
-- `src/core/memory_budget.hpp`
-- `tests/memory_budget_tests.cpp`
+## Test coverage
 
-No llama.cpp source files are changed.
+The new CTest target covers:
 
-No model files are added.
+- Edge/Standard/Large/Above-large boundary classification.
+- JSON manifest write/read round trip.
+- Manual metadata preservation.
+- Local scan handling of non-GGUF files.
+- Safe rejection/ignoring of an invalid GGUF fixture.
 
-No HTTP server, Studio dashboard, registry, agent, fine-tuning, packaging, or WASM code is added.
+The existing targets remain:
 
-## Validation status
+```text
+syj_core_tests
+syj_memory_budget_tests
+```
 
-No Phase 2 build or CTest result is claimed in this artifact.
+New target:
 
-The preparation environment cannot access the user's Termux build tree, and the public GitHub connector is read-only. The full vendored llama.cpp tree could not be copied into this artifact from the connector, so the ZIP is explicitly an **overlay ZIP** that must be extracted over the existing Phase 2 baseline containing `third_party/llama.cpp`.
+```text
+syj_model_registry_tests
+```
 
-This is intentional transparency: the artifact is not falsely described as self-contained when the pinned ~174 MB vendor tree is not available to the file-generation environment.
+## Validation performed by the preparation environment
 
-## Required manual validation on ARM64/Termux
+The implementation environment could not execute the project's CMake build against the user's vendored llama.cpp tree.
 
-From the existing repository root after extracting this overlay:
+A public GitHub read check verified the Phase 2 baseline commit, tag state, and dependency pin, but that is not a build or hardware validation.
+
+Therefore this artifact makes **no claim of a successful Phase 3 build, CTest run, real-GGUF scan, or ARM64 Termux result**.
+
+## Required manual validation on ARM64 Termux
+
+Extract the Phase 3 artifact over the existing repository checkout without deleting `third_party/llama.cpp`.
+
+Then:
 
 ```sh
 cd ~/SYJ-LLM
 
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+git rev-parse HEAD
+git tag -l --sort=version:refname
+cat third_party/llama.cpp/SYJ_LLAMA_VERSION
+
+rm -rf build
+
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DGGML_NATIVE=OFF
+
 cmake --build build --parallel 1
-ctest --test-dir build --output-on-failure
-./build/syj --help
-```
-
-The existing Phase 1 smoke test is expected to remain the same CTest target:
-
-`syj_core_tests`
-
-For real-model Phase 2 checks, set the two existing local GGUF paths from the Phase 1 environment:
-
-```sh
-export SYJ_PHASE2_SMALL_MODEL="$HOME/SYJ-EdgeMind/models/local/SmolLM2-135M-Instruct-Q4_K_M.gguf"
-export SYJ_PHASE2_3B_MODEL="$HOME/llama.cpp/models/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
 
 ctest --test-dir build --output-on-failure
 ```
 
-The new `syj_memory_budget_tests` will then:
+Expected test targets after a successful build:
 
-1. Load the small model under a `1.50 GiB` budget and require successful admission/loading.
-2. Attempt the known 3B model under the same `1.50 GiB` budget and require `SYJ_ERROR_INSUFFICIENT_MEMORY` before real model loading.
-3. Verify the structured error fields.
-4. Verify queryable runtime memory state for the admitted model.
+```text
+syj_core_tests
+syj_memory_budget_tests
+syj_model_registry_tests
+```
 
-Finally, repeat the real Phase 1 inference smoke test with the same 3B GGUF using a budget large enough to admit the estimator, for example:
+### Registry fixture validation
+
+Create a disposable local model directory:
 
 ```sh
-./build/syj "$SYJ_PHASE2_3B_MODEL" "What is 2 plus 2? Answer with only the number."
+mkdir -p ~/SYJ-LLM-REGISTRY-CHECK
 ```
 
-For a direct API-level budget test, compile/run a small caller using:
+Copy a real local GGUF into it, for example:
 
-```cpp
-syj::core::MemoryBudget budget;
-budget.max_bytes = 1536ULL * 1024ULL * 1024ULL;
-
-syj::core::RuntimeConfig config;
-config.memory_budget = budget;
-
-syj::core::Runtime runtime(config);
-syj::core::Status status = runtime.load_model("model.gguf");
+```sh
+cp "$HOME/SYJ-EdgeMind/models/local/SmolLM2-135M-Instruct-Q4_K_M.gguf" \
+  ~/SYJ-LLM-REGISTRY-CHECK/
 ```
 
-## What was not validated by the preparation environment
+Then scan:
 
-- Full CMake build against the complete vendored llama.cpp tree
-- Termux ARM64 compilation
-- Real GGUF preflight execution
-- Real RSS after Phase 2 changes
-- Real small-model admission
-- Real 3B pre-load rejection
-- Full sanitizer build
+```sh
+./build/syj model scan ~/SYJ-LLM-REGISTRY-CHECK
+```
 
-Do not treat any of those as completed until the user runs them.
+Inspect:
 
-## Phase 3 gate
+```sh
+./build/syj model list
+```
 
-Do not begin Phase 3 until Phase 2 is manually built, tested, real-model validated, committed, and pushed by the repository owner.
+The manifest should now contain a local entry under:
+
+```text
+models/registry.json
+```
+
+Then show it:
+
+```sh
+./build/syj model show \
+  "SmolLM2-135M-Instruct-Q4_K_M"
+```
+
+### Phase 2 regression
+
+Run the existing real inference path:
+
+```sh
+./build/syj \
+  "$HOME/SYJ-EdgeMind/models/local/SmolLM2-135M-Instruct-Q4_K_M.gguf" \
+  "What is 2 plus 2? Answer with only the number."
+```
+
+### Memory-admission regression
+
+The registry must not bypass Phase 2 admission. Re-run the established real-model checks using the existing Phase 2 validation procedure and confirm:
+
+- small model remains admissible at the 1.50 GiB budget;
+- 3B model remains rejected at 1.50 GiB;
+- 3B model remains admissible at 3.00 GiB.
+
+## What remains unvalidated
+
+Until the project owner runs the commands above, these are explicitly **not yet measured/validated for Phase 3**:
+
+- Phase 3 compilation on ARM64 Termux.
+- Phase 3 CTest result.
+- Real GGUF discovery result.
+- Real GGUF metadata values produced by the new registry.
+- Registry scan runtime/RSS overhead.
+- Phase 3 CLI behavior on the target device.
+- Windows/macOS/Linux builds.
+
+## Out of scope
+
+Not implemented in Phase 3:
+
+- Network model downloads.
+- Remote registry synchronization.
+- Studio API.
+- Web dashboard.
+- Fine-tuning.
+- Agents/function calling.
+- Packaging.
+- iOS.
+- macOS Metal.
+- Android JNI.
+- WASM.
+
+## Phase gate
+
+Do not proceed to Phase 4 until Phase 3 has been manually built, tested, real-GGUF scanned, regression-tested, committed, pushed, and confirmed by the repository owner.

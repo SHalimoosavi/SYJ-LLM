@@ -5,7 +5,7 @@
 namespace syj::core {
 
 constexpr std::string_view version() noexcept {
-    return "0.2.0";
+    return "0.3.0";
 }
 
 constexpr std::string_view vendor() noexcept {
